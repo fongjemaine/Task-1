@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using RabbitMQ.Client;
 using task1.Models;
 
 namespace task1.Controllers
@@ -79,7 +81,32 @@ namespace task1.Controllers
         {
             _context.TaskItems.Add(taskItem);
             await _context.SaveChangesAsync();
+            var factory = new ConnectionFactory()
+            {
+                HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST"),
+                Port = Convert.ToInt32(Environment.GetEnvironmentVariable("RABBITMQ_PORT"))
 
+            };
+            Console.WriteLine(factory.HostName + factory.Port);
+            using (var connection = factory.CreateConnection())
+            using (var channel = connection.CreateModel())
+            {
+                channel.QueueDeclare(queue: "tasks",
+                                        durable: false,
+                                        exclusive: false,
+                                        autoDelete: false,
+                                        arguments: null);
+
+                string message = "Task id is " + taskItem.Id + ", task description is " + taskItem.taskdescription +
+                    ", task priority is " + taskItem.taskpriority + ", task status is " + taskItem.taskstatus +
+                    ", customer id is " + taskItem.customerid;
+                var body = Encoding.UTF8.GetBytes(message);
+
+                channel.BasicPublish(exchange: "",
+                    routingKey: "tasks",
+                    basicProperties: null,
+                    body: body);
+            }
             return CreatedAtAction(nameof(GetTaskItem), new { id = taskItem.Id }, taskItem);
         }
 
